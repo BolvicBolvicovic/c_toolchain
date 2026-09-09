@@ -75,7 +75,7 @@ arena_t*	arena_alloc(arena_parameters_t*);
 void		arena_release(arena_t*);
 
 /* arena_t push/pop/pos core funtions */
-void*		arena_push(arena_t*, u32 size, u32 align, bool zero);
+void*		arena_push(arena_t*, u32 size, u32 align, u8 zero);
 u32		arena_pos(arena_t*);
 void		arena_pop_to(arena_t*, u32 pos);
 

@@ -17,5 +17,6 @@
 #define CLAMP_TOP(a, x)		MIN(a, x)
 #define CLAMP_BOT(x, b)		MAX(x, b)
 #define ERROR(line, err)	fprintf(stderr, "[line %d] Error %s\n", line, err)
+#define ARRAY_COUNT(arr)	(sizeof(arr)/sizeof(*(arr)))
 
 #endif

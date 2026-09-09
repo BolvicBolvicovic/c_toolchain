@@ -67,7 +67,7 @@ arena_release(arena_t* arena)
 }
 
 void*
-arena_push(arena_t* arena, u32 size, u32 align, bool zero)
+arena_push(arena_t* arena, u32 size, u32 align, u8 zero)
 {
 	arena_t*	current = arena->current;
 	u32		pos_pre = ALIGN(current->position, align);
