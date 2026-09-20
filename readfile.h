@@ -2,7 +2,7 @@
 #define READFILE_H
 
 #include <stdio.h>
-#include <arena.h>
+#include "arena.h"
 
 static char*
 readfile(arena_t* arena, const char* path)

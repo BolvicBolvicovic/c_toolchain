@@ -1,6 +1,10 @@
-#include <zstring.h>
+#include "arena.h"
+#include "c_types.h"
+#include "zstring.h"
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdarg.h>
 
 zstring*
 zstring_on_heap(arena_t* arena, char* data, u64 size)
@@ -219,10 +223,124 @@ zstring_cmp(zstring* z1, zstring* z2)
 	return 1;
 }
 
-s32
-zstring_print(zstring* z)
+static void
+itoa(char* dst, s32 src)
 {
-	return write(1, z->data, z->size);
+	u32	i = src < 0 ? 1 : 0;
+	u32	n = (src < 0) ? -src : src;
+	u32	nc= n;
+
+	do
+	{
+		i++;
+		nc /= 10;
+	} while (nc);
+
+	char*	p = dst + i;
+	*p = '\0';
+	
+	do
+	{
+		*--p = '0' + (n % 10);
+		n /= 10;
+	} while (n);
+	
+	if (src < 0) *--p = '-';
+}
+
+s32
+zstring_vprint(zstring *z, va_list ap)
+{
+	u32	start = 0;
+	char	buf[16];
+
+	for (u32 i = 0; i < z->size; i++)
+	{
+		if (z->data[i] != '%') continue;
+
+		write(1, z->data + start, (++i) - start - 1);
+		start = i + 1;
+		
+		switch (z->data[i])
+		{
+		case 'd':
+		{
+			itoa(buf, va_arg(ap, s32));
+			write(1, buf, strlen(buf));
+		} break;
+		case 's':
+		{
+			char*	str = va_arg(ap, char*);
+			write(1, str, strlen(str));
+		} break;
+		case 'z':
+		{
+			zstring_print(va_arg(ap, zstring*));
+		} break;
+		case '%':
+		{
+			write(1, "%", 1);
+		}break;
+		}
+	}
+
+	return write(1, z->data + start, z->size - start);
+}
+
+s32
+zstring_print(zstring* z, ...)
+{
+	va_list	ap;
+	s32	result;
+	
+	va_start(ap, z);
+
+	result = zstring_vprint(z, ap);
+
+	va_end(ap);
+
+	return result;
+}
+
+zstring*
+zstring_vsprint(zstring *z, arena_t* arena, va_list ap)
+{
+	u32	start = 0;
+	char	buf[16];
+	zstring*result = &zstring_on_stack(0, 0);
+
+	for (u32 i = 0; i < z->size; i++)
+	{
+		if (z->data[i] != '%') continue;
+
+
+		result = zstring_cat(arena, result, &zstring_on_stack(z->data + start, (++i) - start - 1));
+		start = i + 1;
+		
+		switch (z->data[i])
+		{
+		case 'd':
+		{
+			itoa(buf, va_arg(ap, s32));
+			result = zstring_cat(arena, result, &zstring_on_stack(buf, strlen(buf)));
+		} break;
+		case 's':
+		{
+			char*	str = va_arg(ap, char*);
+			result = zstring_cat(arena, result, &zstring_on_stack(str, strlen(str)));
+		} break;
+		case 'z':
+		{
+			zstring_cat(arena, result, va_arg(ap, zstring*));
+		} break;
+		case '%':
+		{
+			zstring_cat(arena, result, &zstring_on_stack("%", 1));
+		}break;
+		}
+	}
+
+	return zstring_cat(arena, result, &zstring_on_stack(z->data + start, z->size - start));
 }
 
 #ifdef TEST_MODE

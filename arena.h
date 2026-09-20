@@ -1,9 +1,9 @@
 #ifndef ARENA_H
 #define ARENA_H
 
-#include <c_types.h>
-#include <bits.h>
-#include <sizes.h>
+#include "c_types.h"
+#include "bits.h"
+#include "sizes.h"
 
 #define PAGE_SIZE	KB(4)
 #define PAGE_LARGE_SIZE	MB(4)

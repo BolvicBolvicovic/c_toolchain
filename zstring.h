@@ -1,8 +1,10 @@
 #ifndef ZSTRING_H
 #define ZSTRING_H
 
-#include <c_types.h>
-#include <arena.h>
+#include "c_types.h"
+#include "arena.h"
+#include "stdarg.h"
+#include <stdbool.h>
 
 // Name: zstring
 // Description: ZII-string struct which is fast, secure and interoperable.
@@ -55,6 +57,8 @@ bool		zstring_cmp(zstring* z1, zstring* z2);
 // - zstring_as_cstring_on_stack()
 // - zstring_as_cstring_on_heap()
 
-s32		zstring_print(zstring* z);
+s32		zstring_print(zstring* z, ...);
+s32		zstring_vprint(zstring *z, va_list ap);
+zstring*	zstring_vsprint(zstring *z, arena_t* arena, va_list ap);
 
 #endif
