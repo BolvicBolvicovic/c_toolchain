@@ -2,25 +2,11 @@
 #include "c_types.h"
 #include "arena.h"
 #include <stdio.h>
+#include <stdbool.h>
 
-typedef struct Suit Suit;
-typedef struct Node Node;
-typedef struct List List;
+typedef struct Suite Suite;
 
-struct Node
-{
-	void* data;
-	Node* next;
-};
-
-struct List
-{
-	Node* head;
-	Node* tail;
-	u32   size;
-};
-
-struct Suit
+struct Suite
 {
 	VtestType kinds;
 	List      listTest;
@@ -35,6 +21,7 @@ struct Suit
 
 AssertCtx g_assert_ctx;
 
+// TODO: Add command line to select test/suite to run
 s32
 main(s32 argc, char** argv)
 {
@@ -42,69 +29,74 @@ main(s32 argc, char** argv)
 	(void)argv;
 
 	s32      successCount = 0;
-	s32      testsCount   = __stop_vtest - __start_vtest;
+	s32      testsCount   = 0;
 	arena_t* arena        = ARENA_ALLOC();
-	List     suits        = { 0 };
+	List     suites       = { 0 };
+	char*    suiteFile    = 0;
 
 	for (Vtest* test = __start_vtest; test < __stop_vtest; test++)
 	{
-		//TODO: find a safer way than using __COUNTER__
-		if (test->idx == 0)
+		if (test->file != suiteFile)
 		{
 			Node* node       = ARENA_PUSH_STRUCT(arena, Node);
-			node->data       = ARENA_PUSH_STRUCT(arena, Suit);
-			Suit* suit       = node->data;
+			node->data       = ARENA_PUSH_STRUCT(arena, Suite);
+			Suite* suit       = node->data;
 
 			suit->file = test->file;
 
-			if (suits.size == 0)
+			if (suites.size == 0)
 			{
-				suits.head = node;
+				suites.head = node;
 			}
 			else
 			{
-				suits.tail->next = node;
+				suites.tail->next = node;
 			}
-			suits.tail = node;
-			suits.size++;
+			suites.tail = node;
+			suites.size++;
+			suiteFile = test->file;
 		}
 
-		Suit* suit   = suits.tail->data;
-		suit->kinds |= test->type;
+		Suite* suite  = suites.tail->data;
+		suite->kinds |= test->type;
 
 		switch (test->type)
 		{
-#define PushTestOnSuit(List)                              \
+#define PushTestOnSuite(List)                             \
 	Node* node       = ARENA_PUSH_STRUCT(arena, Node);\
 	node->data       = test;                          \
                                                           \
-	if (suit->List.size == 0)                         \
+	if (suite->List.size == 0)                        \
 	{                                                 \
-		suit->List.head = node;                   \
+		suite->List.head = node;                  \
 	}                                                 \
 	else                                              \
 	{                                                 \
-		suit->List.tail->next = node;             \
+		suite->List.tail->next = node;            \
 	}                                                 \
-	suit->List.tail = node;                           \
-	suit->List.size++;
+	suite->List.tail = node;                          \
+	suite->List.size++;                               \
+	testsCount++;
 
-#define SetMetaTest(Test)                                                        \
-	if (suit->Test)                                                          \
-	{                                                                        \
-		printf("Updating already defined %s in %s\n", #Test, suit->file);\
-	}                                                                        \
-	suit->Test = test;
+#define SetMetaTest(Test)                                                         \
+	if (suite->Test)                                                          \
+	{                                                                         \
+		printf("Updating already defined %s in %s\n", #Test, suite->file);\
+	}                                                                         \
+	suite->Test = test;
 
-			// TODO: be more explicit about the error
-			case VtestTypeError: perror("Invalide test"); return 1;
+			case VtestTypeError: 
+			{
+				fprintf(stderr, "VtestTypeError %s registered in %s. Exiting...", test->name, test->file);
+				return 1;
+			} break;
 			case VtestTypeTest:
 			{
-				PushTestOnSuit(listTest);
+				PushTestOnSuite(listTest);
 			} break;
 			case VtestTypeTestWithArg:
 			{
-				PushTestOnSuit(listTestWithArg);
+				PushTestOnSuite(listTestWithArg);
 			} break;
 			case VtestTypePreTest:
 			{
@@ -132,47 +124,97 @@ main(s32 argc, char** argv)
 	}
 
 	printf("--- VTEST START ---\n");
-	printf("Discovered %d tests for %d suits\n", testsCount, suits.size);
+	printf("Discovered %d tests for %d suits\n", testsCount, suites.size);
 
-	for (Node* node = suits.head; node; node=node->next)
+	for (Node* node = suites.head; node; node=node->next)
 	{
-		Suit* suit           = node->data;
-		s32   suitTestsCount = suit->listTest.size + suit->listTestWithArg.size;
+		Suite* suite          = node->data;
+		s32   suiteTestsCount = suite->listTest.size + suite->listTestWithArg.size;
 
-		printf("\nRunning %d tests for suit in file %s\n", suitTestsCount, suit->file);
+		printf("\nRunning %d tests for suit %s\n", suiteTestsCount, suite->file);
 
-		// TODO: handle tests with arg and the runner.
-		if (suit->preTransUnit)
+		if (suite->preTransUnit)
 		{
-			suit->preTransUnit->func(suit->preTransUnit->arg);
+			suite->preTransUnit->func(suite->preTransUnit->args);
 		}
-		for (Node* nodeTest = suit->listTest.head; nodeTest; nodeTest=nodeTest->next)
+
+		if (suite->runner)
+		{
+			suite->runner->func(arena);
+		}
+
+		for (Node* nodeTest = suite->listTest.head; nodeTest; nodeTest=nodeTest->next)
 		{
 			Vtest* test = nodeTest->data;
 			s32    jump = setjmp(g_assert_ctx.jmpbuffer);
 
 			if (jump == 0)
 			{
-				if (suit->preTest)
+				if (suite->preTest)
 				{
-					suit->preTest->func(suit->preTest->arg);
+					suite->preTest->func(suite->preTest->args);
 				}
 				test->func(0);
-				if (suit->postTest)
+				if (suite->postTest)
 				{
-					suit->postTest->func(suit->postTest->arg);
+					suite->postTest->func(suite->postTest->args);
 				}
 				successCount++;
 			}
 			else
 			{
-				printf("%s FAILED:\n", test->name);
+				printf("\n%s FAILED:\n", test->name);
 				printf("In %s at line %d: '%s'\n", test->file, g_assert_ctx.line, g_assert_ctx.assertion);
 			}
 		}
-		if (suit->postTransUnit)
+		
+		for (Node* nodeTest = suite->listTestWithArg.head; nodeTest; nodeTest=nodeTest->next)
 		{
-			suit->postTransUnit->func(suit->postTransUnit->arg);
+			Vtest* test    = nodeTest->data;
+			List*  args    = test->args;
+			s32    argi    = 0;
+			bool   success = true;
+
+			if (args == 0)
+			{
+				printf("\nNo arguments registered for test %s. Skipping...\n", test->name);
+				continue;
+			}
+			else
+			{
+				printf("\n%d arguments found for test %s\n", args->size, test->name);
+			}
+
+			for (Node* nodeArg = args->head; nodeArg; nodeArg=nodeArg->next, argi++)
+			{
+				s32    jump = setjmp(g_assert_ctx.jmpbuffer);
+
+				if (jump == 0)
+				{
+					if (suite->preTest)
+					{
+						suite->preTest->func(suite->preTest->args);
+					}
+					test->func(nodeArg->data);
+					if (suite->postTest)
+					{
+						suite->postTest->func(suite->postTest->args);
+					}
+				}
+				else
+				{
+					printf("\n%s FAILED WITH ARGS[%d]:\n", test->name, argi);
+					printf("In %s at line %d: '%s'\n", test->file, g_assert_ctx.line, g_assert_ctx.assertion);
+					success = false;
+				}
+			}
+
+			successCount += success;
+		}
+
+		if (suite->postTransUnit)
+		{
+			suite->postTransUnit->func(suite->postTransUnit->args);
 		}
 	}
 
