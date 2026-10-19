@@ -5,14 +5,18 @@
 #error "MSVC not supported. Consider GCC or CLANG instead."
 #endif
 
+#if !defined(__i386__) && !defined(__x86_64__)
+#error "Architecture currently not supported"
+#endif
+
 // TODO: Write the documentation for the testing framework.
-// TODO: Write the ASSERT_CLOCK_START and ASSERT_CLOCK_END for testing performance requierment.
 
 #include "c_types.h"
 #include "arena.h"
 #include <setjmp.h>
 #include <stdio.h>  // IWYU pragma: keep
 #include <string.h> // IWYU pragma: keep
+#include <immintrin.h>
 
 typedef struct Node Node;
 typedef struct List List;
@@ -56,24 +60,24 @@ extern AssertCtx g_assert_ctx;
 
 #define ASSERT_VERBOSE 1
 
-#define TEST_LIST              \
+#define _TEST_LIST             \
 	X(VtestTypeTestWithArg)\
 	X(VtestTypeTest)
 
-#define META_TEST_LIST           \
+#define _META_TEST_LIST          \
 	X(VtestTypePreTest)      \
 	X(VtestTypePreTransUnit) \
 	X(VtestTypePostTest)     \
 	X(VtestTypePostTransUnit)
 
-#define SECTION_LIST             \
-	TEST_LIST                \
-	META_TEST_LIST
+#define _SECTION_LIST             \
+	_TEST_LIST                \
+	_META_TEST_LIST
 
 #define X(type)                       \
 	extern Vtest __start_##type[];\
 	extern Vtest __stop_##type[];
-SECTION_LIST
+_SECTION_LIST
 #undef X
 
 #define __TEST(name, arg, type)              \
@@ -91,7 +95,7 @@ SECTION_LIST
 #define POST_TRANS_UNIT()         _TEST(_vtest_posttransunit_##__COUNTER__, VtestTypePostTransUnit)
 #define TEST_WITH_ARG(name, arg) __TEST(name, arg, VtestTypeTestWithArg)
 
-#define REGISTER_ARG(test, arg_type, ...)                               \
+#define TEST_INPUT(test, arg_type, ...)                                 \
 	do                                                              \
 	{                                                               \
 		arena_t* ar   = arena;                                  \
@@ -128,5 +132,15 @@ SECTION_LIST
 		}                                         \
 	} while (0)
 #endif
+
+#define ASSERT_CLOCK_START(name)\
+	u64 name##_start;       \
+	u32 name##_shadow;      \
+	name##_start = __rdtscp(&(name##_shadow))
+#define ASSERT_CLOCK_END(name, max_cycles)           \
+	u64 name##_end;                              \
+	name##_end = __rdtscp(&(name##_shadow));\
+	__asm__ volatile("":::"memory");             \
+	ASSERT((name##_end - name##_start) < max_cycles)
 
 #endif

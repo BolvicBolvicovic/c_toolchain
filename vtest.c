@@ -9,10 +9,10 @@ typedef struct Suite Suite;
 struct Suite
 {
 #define X(type) List type;
-TEST_LIST
+_TEST_LIST
 #undef X
 #define X(type) Vtest* type;
-META_TEST_LIST
+_META_TEST_LIST
 #undef X
 	char*     file;
 };
@@ -44,7 +44,7 @@ SWISSMAP_DEFINE_FUNCTIONS(SuiteHM, char*, Suite*, _hash, _eq);
 AssertCtx g_assert_ctx;
 
 #define X(type) __attribute__((section(#type), used)) Vtest _guard_##type = {0};
-SECTION_LIST
+_SECTION_LIST
 #undef X
 
 // TODO: Add command line to select test/suite to run
@@ -54,7 +54,7 @@ main(s32 argc, char** argv)
 	(void)argc;
 	(void)argv;
 #define X(Type) s32 count##Type = (__stop_##Type - __start_##Type);
-TEST_LIST
+_TEST_LIST
 #undef X
 
 	arena_t*  arena        = ARENA_ALLOC();
@@ -96,7 +96,7 @@ TEST_LIST
 		suite->Type.size++;                                     \
 	}                                                               \
 	suiteFile = 0, suite = 0;
-	TEST_LIST
+	_TEST_LIST
 #undef X
 #define X(Type)                                                                           \
 	for (Vtest* test = __start_##Type; test < __stop_##Type; test++)                  \
@@ -109,7 +109,7 @@ TEST_LIST
 		suite->Type = test;                                                       \
 	}                                                                                 \
 	suiteFile = 0, suite = 0;
-	META_TEST_LIST
+	_META_TEST_LIST
 #undef NewSuite
 #undef X
 
