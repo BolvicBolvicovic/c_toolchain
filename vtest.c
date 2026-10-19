@@ -4,6 +4,8 @@
 #include "swissmap.h"
 #include <stdio.h>
 #include <stdbool.h>
+#define _GNU_SOURCE
+#include <getopt.h>
 
 typedef struct Suite Suite;
 struct Suite
@@ -17,25 +19,8 @@ _META_TEST_LIST
 	char*     file;
 };
 
-inline static u64
-_hash(char* key)
-{
-	u64 x = (u64)(key);
-	
-	x ^= x >> 30;
-	x *= 0xbf58476d1ce4e5b9ULL;
-	x ^= x >> 27;
-	x *= 0x94d049bb133111ebULL;
-	x ^= x >> 31;
-	
-	return x;
-}
-
-inline static bool
-_eq(char* p1, char* p2) { return p1 == p2; }
-
 SWISSMAP_DECLARE_DEFAULT(SuiteHM, Suite*);
-SWISSMAP_DEFINE_FUNCTIONS(SuiteHM, char*, Suite*, _hash, _eq);
+SWISSMAP_DEFINE_FUNCTIONS_DEFAULT(SuiteHM, Suite*);
 
 #ifndef SUITES_CAPACITY
 #define SUITES_CAPACITY 500
@@ -47,12 +32,9 @@ AssertCtx g_assert_ctx;
 _SECTION_LIST
 #undef X
 
-// TODO: Add command line to select test/suite to run
 s32
 main(s32 argc, char** argv)
 {
-	(void)argc;
-	(void)argv;
 #define X(Type) s32 count##Type = (__stop_##Type - __start_##Type);
 _TEST_LIST
 #undef X
@@ -64,9 +46,9 @@ _TEST_LIST
 	char*     suiteFile    = 0;
 	Suite*    suite        = 0;
 
-
+// -- TEST DISCOVERY START --
 #define NewSuite(Type)                                                                       \
-	if (test == &_guard_##Type) continue;                                                 \
+	if (test == &_guard_##Type) continue;                                                \
 	do { if (test->file != suiteFile)                                                    \
 	{                                                                                    \
 		Suite** suite_ptr = SuiteHM_get(suites, test->file);                         \
@@ -112,6 +94,219 @@ _TEST_LIST
 	_META_TEST_LIST
 #undef NewSuite
 #undef X
+
+// -- TEST DISCOVERY END --
+
+	if (argc == 1) goto skip_cli;
+// -- CLI START --
+
+	s32           opt;
+	s32           option_idx  = 0;
+	Vtest*        test        = 0;
+	struct option long_opts[] =
+	{
+		{ "test",            optional_argument, 0, 't'  },
+		{ "suite",           optional_argument, 0, 's'  },
+		{ "help",            optional_argument, 0, 'h'  }
+	};
+
+	while ((opt = getopt_long(argc, argv, "t:s:h", long_opts, &option_idx)) != -1)
+	{
+		switch (opt)
+		{
+		case 't':
+		{
+			if (suite == 0)
+			{
+				fprintf(stderr, "Usage: %s --suite [FILE] --test [NAME]\n", argv[0]);
+				return 1;
+			}
+
+			for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)
+			{
+				Vtest* t = nodeTest->data;
+				if (memcmp(t->name, optarg, strlen(t->name))) continue;
+
+				test = t;
+				break;
+			}
+
+			if (test !=0) break;
+
+			for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)
+			{
+				Vtest* t = nodeTest->data;
+				if (memcmp(t->name, optarg, strlen(t->name))) continue;
+
+				test = t;
+				break;
+			}
+			
+			if (test == 0)
+			{
+				fprintf(stderr, "Test %s not found in suite %s\n", optarg, suite->file);
+				return 1;
+			}
+
+			if (test->args == 0)
+			{
+				fprintf(stderr, "Test %s not setup in pre-trans-unit\n", optarg);
+				return 1;
+			}
+		} break;
+		case 's':
+		{
+			Suite** suite_ptr = SuiteHM_get(suites, optarg);
+
+			if (suite_ptr == 0)
+			{
+				fprintf(stderr, "Suite %s not found\n", optarg);
+				return 1;
+			}
+
+			suite = *suite_ptr;
+		} break;
+		default:
+		case 'h':
+		{
+			printf( "Usage: %s [OPTIONS]\n"
+				"  [NO OPTIONS]       : Run all suites.\n"
+				"  -s, --suite [FILE] : Run the first suite that matches the file.\n"
+				"                       If '--test' is given, only run the test.\n"
+				"  -t, --test  [NAME] : Run [NAME] test.\n"
+				"                       Need the '--suite' option to be first.\n"
+				"                       Tests with argument need to register it in the pre-trans-unit.\n"
+				"  -h, --help         : Print this message.\n", argv[0]);
+			return 1;
+		} break;
+		}
+	}
+
+	if (suite == 0) goto skip_cli;
+	
+	s32   suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
+
+	if (test && (test < __start_VtestTypeTest || test > __stop_VtestTypeTest)
+		 && suite->VtestTypePreTransUnit == 0)
+	{
+		fprintf(stderr, "Suite %s does not have pre-trans-unit to setup test with arg\n", suite->file);
+		return 1;
+	}
+	
+	if (suite->VtestTypePreTransUnit)
+	{
+		suite->VtestTypePreTransUnit->func(arena);
+	}
+
+	if (test)
+	{
+		s32    jump = setjmp(g_assert_ctx.jmpbuffer);
+
+		if (jump == 0)
+		{
+			if (suite->VtestTypePreTest)
+			{
+				suite->VtestTypePreTest->func(0);
+			}
+			test->func(test->args);
+			if (suite->VtestTypePostTest)
+			{
+				suite->VtestTypePostTest->func(0);
+			}
+			return 0;
+		}
+		else
+		{
+			printf("\n%s FAILED:\n", test->name);
+			printf("In %s at line %d: '%s'\n", test->file, g_assert_ctx.line, g_assert_ctx.assertion);
+			return 1;
+		}
+	}
+	else
+	{
+		printf("\nRunning %d tests for suit %s\n", suiteTestsCount, suite->file);
+		
+		for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)
+		{
+			Vtest* test = nodeTest->data;
+			s32    jump = setjmp(g_assert_ctx.jmpbuffer);
+
+			if (jump == 0)
+			{
+				if (suite->VtestTypePreTest)
+				{
+					suite->VtestTypePreTest->func(0);
+				}
+				test->func(0);
+				if (suite->VtestTypePostTest)
+				{
+					suite->VtestTypePostTest->func(0);
+				}
+				successCount++;
+			}
+			else
+			{
+				printf("\n%s FAILED:\n", test->name);
+				printf("In %s at line %d: '%s'\n", test->file, g_assert_ctx.line, g_assert_ctx.assertion);
+			}
+		}
+		
+		for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)
+		{
+			Vtest* test    = nodeTest->data;
+			List*  args    = test->args;
+			s32    argi    = 0;
+			bool   success = true;
+
+			if (args == 0)
+			{
+				printf("\nNo arguments registered for test %s. Skipping...\n", test->name);
+				continue;
+			}
+			else
+			{
+				printf("\n%d arguments found for test %s\n", args->size, test->name);
+			}
+
+			for (Node* nodeArg = args->head; nodeArg; nodeArg=nodeArg->next, argi++)
+			{
+				s32    jump = setjmp(g_assert_ctx.jmpbuffer);
+
+				if (jump == 0)
+				{
+					if (suite->VtestTypePreTest)
+					{
+						suite->VtestTypePreTest->func(0);
+					}
+					test->func(nodeArg->data);
+					if (suite->VtestTypePostTest)
+					{
+						suite->VtestTypePostTest->func(0);
+					}
+				}
+				else
+				{
+					printf("\n%s FAILED WITH ARGS[%d]:\n", test->name, argi);
+					printf("In %s at line %d: '%s'\n", test->file, g_assert_ctx.line, g_assert_ctx.assertion);
+					success = false;
+				}
+			}
+
+			successCount += success;
+		}
+
+	}
+
+	if (suite->VtestTypePreTransUnit)
+	{
+		suite->VtestTypePreTransUnit->func(arena);
+	}
+	
+	printf("\nSuccessful tests: %u/%u\n", successCount, suiteTestsCount);
+	
+	return 0;
+// -- CLI END --
+skip_cli:
 
 	printf("--- VTEST START ---\n");
 	printf("Discovered %u tests for %lu suits\n", testsCount, suites->size);
