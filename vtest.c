@@ -1,25 +1,51 @@
 #include "vtest.h"
 #include "c_types.h"
 #include "arena.h"
+#include "swissmap.h"
 #include <stdio.h>
 #include <stdbool.h>
 
 typedef struct Suite Suite;
-
 struct Suite
 {
-	VtestType kinds;
-	List      listTest;
-	List      listTestWithArg;
-	Vtest*    preTest;
-	Vtest*    preTransUnit;
-	Vtest*    postTest;
-	Vtest*    postTransUnit;
-	Vtest*    runner;
+#define X(type) List type;
+TEST_LIST
+#undef X
+#define X(type) Vtest* type;
+META_TEST_LIST
+#undef X
 	char*     file;
 };
 
+inline static u64
+_hash(char* key)
+{
+	u64 x = (u64)(key);
+	
+	x ^= x >> 30;
+	x *= 0xbf58476d1ce4e5b9ULL;
+	x ^= x >> 27;
+	x *= 0x94d049bb133111ebULL;
+	x ^= x >> 31;
+	
+	return x;
+}
+
+inline static bool
+_eq(char* p1, char* p2) { return p1 == p2; }
+
+SWISSMAP_DECLARE_DEFAULT(SuiteHM, Suite*);
+SWISSMAP_DEFINE_FUNCTIONS(SuiteHM, char*, Suite*, _hash, _eq);
+
+#ifndef SUITES_CAPACITY
+#define SUITES_CAPACITY 500
+#endif
+
 AssertCtx g_assert_ctx;
+
+#define X(type) __attribute__((section(#type), used)) Vtest _guard_##type = {0};
+SECTION_LIST
+#undef X
 
 // TODO: Add command line to select test/suite to run
 s32
@@ -27,137 +53,97 @@ main(s32 argc, char** argv)
 {
 	(void)argc;
 	(void)argv;
+#define X(Type) s32 count##Type = (__stop_##Type - __start_##Type);
+TEST_LIST
+#undef X
 
-	s32      successCount = 0;
-	s32      testsCount   = 0;
-	arena_t* arena        = ARENA_ALLOC();
-	List     suites       = { 0 };
-	char*    suiteFile    = 0;
+	arena_t*  arena        = ARENA_ALLOC();
+	SuiteHM*  suites       = SuiteHM_new(arena, SUITES_CAPACITY);
+	s32       successCount = 0;
+	const u32 testsCount   = countVtestTypeTest + countVtestTypeTestWithArg - 2; // -2 for guards
+	char*     suiteFile    = 0;
+	Suite*    suite        = 0;
 
-	for (Vtest* test = __start_vtest; test < __stop_vtest; test++)
-	{
-		if (test->file != suiteFile)
-		{
-			Node* node       = ARENA_PUSH_STRUCT(arena, Node);
-			node->data       = ARENA_PUSH_STRUCT(arena, Suite);
-			Suite* suit       = node->data;
 
-			suit->file = test->file;
-
-			if (suites.size == 0)
-			{
-				suites.head = node;
-			}
-			else
-			{
-				suites.tail->next = node;
-			}
-			suites.tail = node;
-			suites.size++;
-			suiteFile = test->file;
-		}
-
-		Suite* suite  = suites.tail->data;
-		suite->kinds |= test->type;
-
-		switch (test->type)
-		{
-#define PushTestOnSuite(List)                             \
-	Node* node       = ARENA_PUSH_STRUCT(arena, Node);\
-	node->data       = test;                          \
-                                                          \
-	if (suite->List.size == 0)                        \
-	{                                                 \
-		suite->List.head = node;                  \
-	}                                                 \
-	else                                              \
-	{                                                 \
-		suite->List.tail->next = node;            \
-	}                                                 \
-	suite->List.tail = node;                          \
-	suite->List.size++;                               \
-	testsCount++;
-
-#define SetMetaTest(Test)                                                         \
-	if (suite->Test)                                                          \
-	{                                                                         \
-		printf("Updating already defined %s in %s\n", #Test, suite->file);\
-	}                                                                         \
-	suite->Test = test;
-
-			case VtestTypeError: 
-			{
-				fprintf(stderr, "VtestTypeError %s registered in %s. Exiting...", test->name, test->file);
-				return 1;
-			} break;
-			case VtestTypeTest:
-			{
-				PushTestOnSuite(listTest);
-			} break;
-			case VtestTypeTestWithArg:
-			{
-				PushTestOnSuite(listTestWithArg);
-			} break;
-			case VtestTypePreTest:
-			{
-				SetMetaTest(preTest);
-			} break;
-			case VtestTypePostTest:
-			{
-				SetMetaTest(postTest);
-			} break;
-			case VtestTypePreTransUnit:
-			{
-				SetMetaTest(preTransUnit);
-			} break;
-			case VtestTypePostTransUnit:
-			{
-				SetMetaTest(postTransUnit);
-			} break;
-			case VtestTypeRunner:
-			{
-				SetMetaTest(runner);
-			} break;
-#undef PushTestOnSuit
-#undef SetMetaTest
-		}
-	}
+#define NewSuite(Type)                                                                       \
+	if (test == &_guard_##Type) continue;                                                 \
+	do { if (test->file != suiteFile)                                                    \
+	{                                                                                    \
+		Suite** suite_ptr = SuiteHM_get(suites, test->file);                         \
+		suite             = suite_ptr ? *suite_ptr : ARENA_PUSH_STRUCT(arena, Suite);\
+		suiteFile         = test->file;                                              \
+		suite->file       = test->file;                                              \
+		if (suite_ptr == 0)                                                          \
+		{                                                                            \
+			SuiteHM_put(suites, test->file, suite);                              \
+		}                                                                            \
+	} } while (0)
+#define X(Type)                                                         \
+	for (Vtest* test = __start_##Type; test < __stop_##Type; test++)\
+	{                                                               \
+		NewSuite(Type);                                         \
+		Node* node       = ARENA_PUSH_STRUCT(arena, Node);      \
+		node->data       = test;                                \
+		if (suite->Type.size == 0)                              \
+		{                                                       \
+			suite->Type.head = node;                        \
+		}                                                       \
+		else                                                    \
+		{                                                       \
+			suite->Type.tail->next = node;                  \
+		}                                                       \
+		suite->Type.tail = node;                                \
+		suite->Type.size++;                                     \
+	}                                                               \
+	suiteFile = 0, suite = 0;
+	TEST_LIST
+#undef X
+#define X(Type)                                                                           \
+	for (Vtest* test = __start_##Type; test < __stop_##Type; test++)                  \
+	{                                                                                 \
+		NewSuite(Type);                                                           \
+		if (suite->Type)                                                          \
+		{                                                                         \
+			printf("Updating already defined %s in %s\n", #Type, suite->file);\
+		}                                                                         \
+		suite->Type = test;                                                       \
+	}                                                                                 \
+	suiteFile = 0, suite = 0;
+	META_TEST_LIST
+#undef NewSuite
+#undef X
 
 	printf("--- VTEST START ---\n");
-	printf("Discovered %d tests for %d suits\n", testsCount, suites.size);
+	printf("Discovered %u tests for %lu suits\n", testsCount, suites->size);
 
-	for (Node* node = suites.head; node; node=node->next)
+	for (u32 i = 0; i < suites->capacity; i++)
 	{
-		Suite* suite          = node->data;
-		s32   suiteTestsCount = suite->listTest.size + suite->listTestWithArg.size;
+		if (suites->ctrl[i] == SWISS_DELETED || suites->ctrl[i] == SWISS_EMPTY) continue;
+		suite                 = suites->values[i];
+		s32   suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
 
 		printf("\nRunning %d tests for suit %s\n", suiteTestsCount, suite->file);
 
-		if (suite->preTransUnit)
+		if (suite->VtestTypePreTransUnit)
 		{
-			suite->preTransUnit->func(suite->preTransUnit->args);
+			suite->VtestTypePreTransUnit->func(arena);
 		}
-
-		if (suite->runner)
-		{
-			suite->runner->func(arena);
-		}
-
-		for (Node* nodeTest = suite->listTest.head; nodeTest; nodeTest=nodeTest->next)
+	
+		for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)
 		{
 			Vtest* test = nodeTest->data;
 			s32    jump = setjmp(g_assert_ctx.jmpbuffer);
 
 			if (jump == 0)
 			{
-				if (suite->preTest)
+				if (suite->VtestTypePreTest)
 				{
-					suite->preTest->func(suite->preTest->args);
+					suite->VtestTypePreTest->func(0);
 				}
 				test->func(0);
-				if (suite->postTest)
+				if (suite->VtestTypePostTest)
 				{
-					suite->postTest->func(suite->postTest->args);
+					suite->VtestTypePostTest->func(0);
 				}
 				successCount++;
 			}
@@ -168,7 +154,7 @@ main(s32 argc, char** argv)
 			}
 		}
 		
-		for (Node* nodeTest = suite->listTestWithArg.head; nodeTest; nodeTest=nodeTest->next)
+		for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)
 		{
 			Vtest* test    = nodeTest->data;
 			List*  args    = test->args;
@@ -191,14 +177,14 @@ main(s32 argc, char** argv)
 
 				if (jump == 0)
 				{
-					if (suite->preTest)
+					if (suite->VtestTypePreTest)
 					{
-						suite->preTest->func(suite->preTest->args);
+						suite->VtestTypePreTest->func(0);
 					}
 					test->func(nodeArg->data);
-					if (suite->postTest)
+					if (suite->VtestTypePostTest)
 					{
-						suite->postTest->func(suite->postTest->args);
+						suite->VtestTypePostTest->func(0);
 					}
 				}
 				else
@@ -212,12 +198,11 @@ main(s32 argc, char** argv)
 			successCount += success;
 		}
 
-		if (suite->postTransUnit)
+		if (suite->VtestTypePostTransUnit)
 		{
-			suite->postTransUnit->func(suite->postTransUnit->args);
+			suite->VtestTypePostTransUnit->func(0);
 		}
 	}
-
 
 	printf("\nSuccessful tests: %u/%u\n", successCount, testsCount);
 	printf("--- VTEST DONE ---\n");
