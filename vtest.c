@@ -3,14 +3,18 @@
  *                    Runner                     *
  *************************************************/
 
-#include "vtest.h"
-#include "c_types.h"
+#define ARENA_IMPL
+#define SWISSMAP_IMPL
+
 #include "arena.h"
 #include "swissmap.h"
+#include "vtest.h"
+#include "c_types.h"
 #include <stdio.h>
 #include <stdbool.h>
 #define _GNU_SOURCE
 #include <getopt.h>
+
 
 /**
  * X macro list for the two test types.
