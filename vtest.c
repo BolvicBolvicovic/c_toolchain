@@ -433,12 +433,15 @@ skip_cli:;
 	for (u32 i = 0; i < suites->capacity; i++)
 	{
 		if (suites->ctrl[i] == SWISS_DELETED || suites->ctrl[i] == SWISS_EMPTY) continue;
-		suite                 = suites->values[i];
-		u32   suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
+		suite                        = suites->values[i];
+		u32          suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
+		arena_temp_t tmp             = arena_temp_begin(arena);
 
 		RUN_SETUP_SUITE(suite, arena);
 		RUN_SUITE(suite, suiteTestsCount, successCount);
 		RUN_TEARDOWN_SUITE(suite);
+
+		arena_temp_end(tmp);
 	}
 
 	printf("\nSuccessful tests: %u/%u\n", successCount, testsCount);

@@ -112,6 +112,11 @@ void		arena_temp_end(arena_temp_t);
 #include <sys/mman.h>
 #include <string.h>
 
+#if defined(__GNUC__) || defined(__CLANG__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Woverride-init"
+#endif
+
 arena_t*
 arena_alloc(arena_parameters_t* params)
 {
@@ -306,6 +311,11 @@ arena_temp_end(arena_temp_t temp)
 {
 	arena_pop_to(temp.arena, temp.pos);
 }
+
+#if defined(__GNUC__) || defined(__CLANG__)
+#pragma GCC diagnostic pop
+#endif
+
 #endif // ARENA_IMPL
 
 #endif // ARENA_H

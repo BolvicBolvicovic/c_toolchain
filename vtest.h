@@ -42,6 +42,7 @@
  *************************************************/
 
 /** TODO Roadmap!
+ *  - Add a logger which prints based on an enum. Allows --verbose.
  *  - Consider tagging tests that want to execute the pre/post meta-functions.
  *  - Improve ASSERT feedback.
  *  - Filter option which would run all suites containing the user input. Same for tests.
@@ -130,15 +131,21 @@ extern AssertCtx g_assert_ctx;
 
 #define ASSERT_VERBOSE 1
 
+#define CAT_(a, b) a##b
+#define CAT(a, b)  CAT_(a, b)
+#define STR_(a)    #a
+#define STR(a)     STR_(a)
+#define UNIQUE(a)  CAT(a, __COUNTER__)
+
 /**
  *  Declare a global Vtest that will be stored in its dedicated section
  *  before proceding to define the test.
  */
-#define __TEST(name, arg, Type)              \
-	static void  name(void*);            \
-	__attribute__((section(#Type), used))\
-	Vtest _vtest_##name =                \
-	{ #name, name, 0, __FILE__ };        \
+#define __TEST(name, arg, Type)                  \
+	static void  name(void*);                \
+	__attribute__((section(STR(Type)), used))\
+	static Vtest CAT(_vtest_,name) =         \
+	{ STR(name), name, 0, __FILE__ };        \
 	static void  name(__attribute__((unused)) void* arg)
 
 #define _TEST(name, Type)        __TEST(name, __unused, Type)
@@ -147,21 +154,48 @@ extern AssertCtx g_assert_ctx;
  */
 #define TEST(name)                _TEST(name, VtestTypeTest)
 /*! Meta function run before every test */
-#define PRE_TEST()                _TEST(_vtest_pretest_##__COUNTER__, VtestTypePreTest)
+#define PRE_TEST()                _TEST(UNIQUE(_vtest_pretest_), VtestTypePreTest)
 /*! Meta function run after every test */
-#define POST_TEST()               _TEST(_vtest_posttest_##__COUNTER__, VtestTypePostTest)
+#define POST_TEST()               _TEST(UNIQUE(_vtest_posttest_), VtestTypePostTest)
 /** Meta function run at the start of the suite.
  *  There are registered inputs to tests with argument.
- *  Note that you can use a hidden @param _ptu_arena of type arena_t* to push stuff on the heap.
+ *  Note that you can use a hidden @param _ss_arena of type arena_t* to push stuff on the heap.
+ *  That param can be passed as argument to further tests with argument.
  */
-#define SETUP_SUITE()            __TEST(_vtest_pretransunit_##__COUNTER__, _ptu_arena, VtestTypeSetupSuite)
+#define SETUP_SUITE()           __TEST(UNIQUE(_vtest_setupsuite_), _ss_arena, VtestTypeSetupSuite)
 /*! Meta function run at the end of the suite */
-#define TEARDOWN_SUITE()         _TEST(_vtest_posttransunit_##__COUNTER__, VtestTypeTeardownSuite)
+#define TEARDOWN_SUITE()         _TEST(UNIQUE(_vtest_teardownsuite_), VtestTypeTeardownSuite)
 /** Test with argument!
  *  @param name
  *  @param arg  Name of the argument. Assign it to a pointer to the user defined input struct.
  */
 #define TEST_WITH_ARG(name, arg) __TEST(name, arg, VtestTypeTestWithArg)
+
+/** Test input pointer!
+ *  Register an input of a pointer to a user defined struct for a test with argument.
+ *  @param test The name of the registered test.
+ *  @param ptr  The pointer variable.
+ */
+#define TEST_INPUT_PTR(test, ptr)                                       \
+	do                                                              \
+	{                                                               \
+		arena_t* ar   = _ss_arena;                              \
+		Node*    node = ARENA_PUSH_STRUCT(ar, Node);            \
+		node->data = ptr;                                       \
+		List* list = _vtest_##test.args;                        \
+		if (list == 0)                                          \
+		{                                                       \
+			list = ARENA_PUSH_STRUCT(ar, List);             \
+			list->head = node;                              \
+			_vtest_##test.args = list;                      \
+		}                                                       \
+		else                                                    \
+		{                                                       \
+			list->tail->next = node;                        \
+		}                                                       \
+		list->tail = node;                                      \
+		list->size++;                                           \
+	} while (0)
 
 /** Test input!
  *  Register an input of a user defined type for a test with argument.

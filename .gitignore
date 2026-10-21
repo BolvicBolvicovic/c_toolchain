@@ -1,3 +1,4 @@
 a.out
 *.o
 tester*
+compile_commands.json
