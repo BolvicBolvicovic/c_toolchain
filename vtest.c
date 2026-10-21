@@ -24,9 +24,9 @@
  */
 #define _META_TEST_LIST          \
 	X(VtestTypePreTest)      \
-	X(VtestTypePreTransUnit) \
+	X(VtestTypeSetupSuite) \
 	X(VtestTypePostTest)     \
-	X(VtestTypePostTransUnit)
+	X(VtestTypeTeardownSuite)
 
 /**
  * X macro list for all elements using sections as compile-time typed arrays.
@@ -94,18 +94,18 @@ SWISSMAP_DEFINE_FUNCTIONS_DEFAULT(SuiteHM, Suite*);
  * @param suite Suite*
  * @param arena arena_t* Defined in "arena.h"
  */
-#define RUN_PRE_TRANS_UNIT(suite, arena) do {             \
-	if (suite->VtestTypePreTransUnit)                 \
-		suite->VtestTypePreTransUnit->func(arena);\
+#define RUN_SETUP_SUITE(suite, arena) do {             \
+	if (suite->VtestTypeSetupSuite)                 \
+		suite->VtestTypeSetupSuite->func(arena);\
 	} while (0)
 
 /**
  * Helper to optionnaly run the teardown of a suite.
  * @param suite Suite*
  */
-#define RUN_POST_TRANS_UNIT(suite) do {                \
-	if (suite->VtestTypePostTransUnit)             \
-		suite->VtestTypePostTransUnit->func(0);\
+#define RUN_TEARDOWN_SUITE(suite) do {                \
+	if (suite->VtestTypeTeardownSuite)             \
+		suite->VtestTypeTeardownSuite->func(0);\
 	} while (0)
 
 /**
@@ -303,7 +303,7 @@ _TEST_LIST
 
 			if (test != 0) break;
 
-			if (suite->VtestTypePreTransUnit == 0)
+			if (suite->VtestTypeSetupSuite == 0)
 			{
 				fprintf(stderr, "No pre-trans-unit function to setup test %s\n", optarg);
 				return 1;
@@ -354,7 +354,7 @@ _TEST_LIST
 
 	if (suite == 0) goto skip_cli;
 	
-	RUN_PRE_TRANS_UNIT(suite, arena);
+	RUN_SETUP_SUITE(suite, arena);
 
 	if (test == 0) goto run_suite;
 
@@ -373,13 +373,13 @@ _TEST_LIST
 		if (jump == 0)
 		{
 			RUN_TEST(test, suite, 0);
-			RUN_POST_TRANS_UNIT(suite);
+			RUN_TEARDOWN_SUITE(suite);
 			return 0;
 		}
 		else
 		{
 			TEST_FAILED(test);
-			RUN_POST_TRANS_UNIT(suite);
+			RUN_TEARDOWN_SUITE(suite);
 			return 1;
 		}
 	}
@@ -404,7 +404,7 @@ _TEST_LIST
 			}
 		}
 
-		RUN_POST_TRANS_UNIT(suite);
+		RUN_TEARDOWN_SUITE(suite);
 		return result;
 	}
 
@@ -413,7 +413,7 @@ run_suite:;
 	u32   suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
 
 	RUN_SUITE(suite, suiteTestsCount, successCount);
-	RUN_POST_TRANS_UNIT(suite);
+	RUN_TEARDOWN_SUITE(suite);
 	
 	printf("\nSuccessful tests: %u/%u\n", successCount, suiteTestsCount);
 	
@@ -432,9 +432,9 @@ skip_cli:;
 		suite                 = suites->values[i];
 		u32   suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
 
-		RUN_PRE_TRANS_UNIT(suite, arena);
+		RUN_SETUP_SUITE(suite, arena);
 		RUN_SUITE(suite, suiteTestsCount, successCount);
-		RUN_POST_TRANS_UNIT(suite);
+		RUN_TEARDOWN_SUITE(suite);
 	}
 
 	printf("\nSuccessful tests: %u/%u\n", successCount, testsCount);

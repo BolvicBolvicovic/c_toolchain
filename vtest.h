@@ -3,6 +3,54 @@
  *                     API                       *
  *************************************************/
 
+/*************************************************
+ * Description:                                  *
+ * VTEST is test framework aimed for small size  *
+ * project. It is easy to use for it has a       *
+ * minimal amount of features by design.         *
+ *************************************************/
+
+/*************************************************
+ * Usage:                                        *
+ * A suite is a .c file containing some tests.   *
+ * A good practice is to use directories if one  *
+ * needs to specify a kind of suite.             *
+ * Example: in test/extensions/new_extensions.c  *
+ * #include "vtest.h"                            *
+ * #include "new_extensions.h"                   *
+ *                                               *
+ * TEST(FeatureFoo)                              *
+ * {                                             *
+ *	ASSERT_SUCCESS(foo("bar") == FeatureOk); *
+ * }                                             *
+ *                                               *
+ * TEST_WITH_ARG(FeatureBar, _bar)               *
+ * {                                             *
+ *	Bar* bar = _bar;                         *
+ *	ASSERT_FAILURE(bar->func("foo") == 0);   *
+ * }                                             *
+ *                                               *
+ * SETUP_SUITE()                                 *
+ * {                                             *
+ *	TEST_INPUT(FeatureBar, Bar, .func=bAR);  *
+ *	TEST_INPUT(FeatureBar, Bar, .func=baR);  *
+ * }                                             *
+ *                                               *
+ * Compile and link all tests files with vtest.c *
+ * and run the executable.                       *
+ * `--help` shows the available options.         *
+ *************************************************/
+
+/** TODO Roadmap!
+ *  - Consider tagging tests that want to execute the pre/post meta-functions.
+ *  - Improve ASSERT feedback.
+ *  - Filter option which would run all suites containing the user input. Same for tests.
+ *  - Runtime controle options (i.e. `--list`, `--verbose`, `--repeat`, etc...).
+ *  - Standard report of elapsed time. 
+ *  - Wrap Vtest in the runner with a meta-Vtest which contains runtime information.
+ *  - JSON output for CI.
+ */
+
 #ifndef VTEST_H
 #define VTEST_H
 
@@ -106,9 +154,9 @@ extern AssertCtx g_assert_ctx;
  *  There are registered inputs to tests with argument.
  *  Note that you can use a hidden @param _ptu_arena of type arena_t* to push stuff on the heap.
  */
-#define PRE_TRANS_UNIT()         __TEST(_vtest_pretransunit_##__COUNTER__, _ptu_arena, VtestTypePreTransUnit)
+#define SETUP_SUITE()            __TEST(_vtest_pretransunit_##__COUNTER__, _ptu_arena, VtestTypeSetupSuite)
 /*! Meta function run at the end of the suite */
-#define POST_TRANS_UNIT()         _TEST(_vtest_posttransunit_##__COUNTER__, VtestTypePostTransUnit)
+#define TEARDOWN_SUITE()         _TEST(_vtest_posttransunit_##__COUNTER__, VtestTypeTeardownSuite)
 /** Test with argument!
  *  @param name
  *  @param arg  Name of the argument. Assign it to a pointer to the user defined input struct.
@@ -159,6 +207,12 @@ extern AssertCtx g_assert_ctx;
 		}                                         \
 	} while (0)
 #endif
+
+/*! More specific name for should successed assertions */
+#define ASSERT_SUCCESS(eq) ASSERT(eq)
+
+/*! More specific name for should fail assertions */
+#define ASSERT_FAILURE(eq) ASSERT(!(eq))
 
 /*! Assertion routine for running a test in a maximum amount of cycles start */
 #define ASSERT_CLOCK_START(name)\
