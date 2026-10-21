@@ -104,9 +104,9 @@ extern AssertCtx g_assert_ctx;
 #define POST_TEST()               _TEST(_vtest_posttest_##__COUNTER__, VtestTypePostTest)
 /** Meta function run at the start of the suite.
  *  There are registered inputs to tests with argument.
- *  Note that you can use a hidden arena_t* arena to push stuff on the heap.
+ *  Note that you can use a hidden @param _ptu_arena of type arena_t* to push stuff on the heap.
  */
-#define PRE_TRANS_UNIT()         __TEST(_vtest_pretransunit_##__COUNTER__, arena, VtestTypePreTransUnit)
+#define PRE_TRANS_UNIT()         __TEST(_vtest_pretransunit_##__COUNTER__, _ptu_arena, VtestTypePreTransUnit)
 /*! Meta function run at the end of the suite */
 #define POST_TRANS_UNIT()         _TEST(_vtest_posttransunit_##__COUNTER__, VtestTypePostTransUnit)
 /** Test with argument!
@@ -124,7 +124,7 @@ extern AssertCtx g_assert_ctx;
 #define TEST_INPUT(test, arg_type, ...)                                 \
 	do                                                              \
 	{                                                               \
-		arena_t* ar   = arena;                                  \
+		arena_t* ar   = _ptu_arena;                             \
 		void*    ag   = ARENA_PUSH_STRUCT(ar, arg_type);        \
 		Node*    node = ARENA_PUSH_STRUCT(ar, Node);            \
 		memmove(ag, &(arg_type){__VA_ARGS__}, sizeof(arg_type));\

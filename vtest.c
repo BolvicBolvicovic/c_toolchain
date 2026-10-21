@@ -37,7 +37,7 @@
 
 /**
  * X macro to define the start and end of each array.
- * @param Type The type of the array.
+ * @param Type Name of the section as a discriminating type for array of registered functions.
  */
 #define X(Type)                       \
 	extern Vtest __start_##Type[];\
@@ -47,6 +47,7 @@ _SECTION_LIST
 
 /** struct Suite!
  *  Contains all tests and meta functions related to testing of a single file.
+ *  @param Type Name of the section as a discriminating type for array of registered functions.
  */
 typedef struct Suite Suite;
 struct Suite
@@ -80,45 +81,106 @@ SWISSMAP_DEFINE_FUNCTIONS_DEFAULT(SuiteHM, Suite*);
  * @param suite Suite*
  * @param arg   void*
  */
-#define RUN_TEST(test, suite, arg)               \
-	if (suite->VtestTypePreTest)             \
-		suite->VtestTypePreTest->func(0);\
-	test->func(arg);                         \
-	if (suite->VtestTypePostTest)            \
-		suite->VtestTypePostTest->func(0)
+#define RUN_TEST(test, suite, arg) do {           \
+	if (suite->VtestTypePreTest)              \
+		suite->VtestTypePreTest->func(0); \
+	test->func(arg);                          \
+	if (suite->VtestTypePostTest)             \
+		suite->VtestTypePostTest->func(0);\
+	} while (0)
 
 /**
  * Helper to optionnaly run the setup of a suite.
  * @param suite Suite*
  * @param arena arena_t* Defined in "arena.h"
  */
-#define RUN_PRE_TRANS_UNIT(suite, arena) \
-	if (suite->VtestTypePreTransUnit)\
-		suite->VtestTypePreTransUnit->func(arena)
+#define RUN_PRE_TRANS_UNIT(suite, arena) do {             \
+	if (suite->VtestTypePreTransUnit)                 \
+		suite->VtestTypePreTransUnit->func(arena);\
+	} while (0)
 
 /**
  * Helper to optionnaly run the teardown of a suite.
  * @param suite Suite*
  */
-#define RUN_POST_TRANS_UNIT(suite)        \
-	if (suite->VtestTypePostTransUnit)\
-		suite->VtestTypePostTransUnit->func(0)
+#define RUN_POST_TRANS_UNIT(suite) do {                \
+	if (suite->VtestTypePostTransUnit)             \
+		suite->VtestTypePostTransUnit->func(0);\
+	} while (0)
+
+/**
+ * Helper to run a suite. Do not use outside of main.
+ * @param suite           Suite*
+ * @param suiteTestsCount u32    Count of both tests and tests with args.
+ * @param successCount    u32    Count of total successful tests.
+ */
+#define RUN_SUITE(suite, suiteTestsCount, successCount) do {                                       \
+	printf("\nRunning %d tests for suite %s\n", suiteTestsCount, suite->file);                 \
+	for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)        \
+	{                                                                                          \
+		Vtest* test = nodeTest->data;                                                      \
+		s32    jump = setjmp(g_assert_ctx.jmpbuffer);                                      \
+		if (jump == 0)                                                                     \
+		{                                                                                  \
+			RUN_TEST(test, suite, 0);                                                  \
+			successCount++;                                                            \
+		}                                                                                  \
+		else                                                                               \
+		{                                                                                  \
+			TEST_FAILED(test);                                                         \
+		}                                                                                  \
+	}                                                                                          \
+	for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next) \
+	{                                                                                          \
+		Vtest* test    = nodeTest->data;                                                   \
+		List*  args    = test->args;                                                       \
+		s32    argi    = 0;                                                                \
+		bool   success = true;                                                             \
+		if (args == 0)                                                                     \
+		{                                                                                  \
+			printf("\nNo arguments registered for test %s. Skipping...\n", test->name);\
+			continue;                                                                  \
+		}                                                                                  \
+		else                                                                               \
+		{                                                                                  \
+			printf("\n%d arguments found for test %s\n", args->size, test->name);      \
+		}                                                                                  \
+		for (Node* nodeArg = args->head; nodeArg; nodeArg=nodeArg->next, argi++)           \
+		{                                                                                  \
+			s32    jump = setjmp(g_assert_ctx.jmpbuffer);                              \
+			if (jump == 0)                                                             \
+			{                                                                          \
+				RUN_TEST(test, suite, nodeArg->data);                              \
+			}                                                                          \
+			else                                                                       \
+			{                                                                          \
+				TEST_FAILED_ARG(test, argi);                                       \
+				success = false;                                                   \
+			}                                                                          \
+		}                                                                                  \
+		successCount += success;                                                           \
+	} } while (0)
 
 /**
  * Helper to print failure message.
  * @param test  Vtest*
  */
-#define TEST_FAILED(test)                    \
-	printf("\n%s FAILED:\n", test->name);\
-	printf("In %s at line %d: '%s'\n", test->file, g_assert_ctx.line, g_assert_ctx.assertion)
+#define TEST_FAILED(test) do {                                                                    \
+	printf("\n%s FAILED:\n", test->name);                                                     \
+	printf("In %s at line %d: '%s'\n", test->file, g_assert_ctx.line, g_assert_ctx.assertion);\
+	} while (0)
 
 /**
  * Helper to print failure message with argument.
  * @param test  Vtest*
  * @param arg   void*
  */
-#define TEST_FAILED_ARG(test, arg) TEST_FAILED(test); printf("With args[%d]\n", arg)
+#define TEST_FAILED_ARG(test, arg) do { TEST_FAILED(test); printf("With args[%d]\n", arg); } while (0)
 
+/**
+ * Global assertion context.
+ * WARNING: Valid only as long as the framework is single-threaded.
+ */
 AssertCtx g_assert_ctx;
 
 /**
@@ -135,6 +197,7 @@ main(s32 argc, char** argv)
 {
 /**
  * X macro to find testsCount.
+ * @param Type Name of the section as a discriminating type for array of registered functions.
  */
 #define X(Type) s32 count##Type = (__stop_##Type - __start_##Type);
 _TEST_LIST
@@ -142,7 +205,7 @@ _TEST_LIST
 
 	arena_t*  arena        = ARENA_ALLOC();
 	SuiteHM*  suites       = SuiteHM_new(arena, SUITES_CAPACITY);
-	s32       successCount = 0;
+	u32       successCount = 0;
 	const u32 testsCount   = countVtestTypeTest + countVtestTypeTestWithArg - 2; // -2 for guards
 	char*     suiteFile    = 0;
 	Suite*    suite        = 0;
@@ -151,6 +214,7 @@ _TEST_LIST
 
 /**
  * Routine run for each section array in case it encounters a new suite.
+ * @param Type Name of the section as a discriminating type for array of registered functions.
  */
 #define NewSuite(Type)                                                                       \
 	if (test == &_guard_##Type) continue;                                                \
@@ -165,6 +229,7 @@ _TEST_LIST
 	} } while (0)
 /**
  * X macro to push tests in their respective list.
+ * @param Type Name of the section as a discriminating type for array of registered functions.
  */
 #define X(Type)                                                         \
 	for (Vtest* test = __start_##Type; test < __stop_##Type; test++)\
@@ -184,6 +249,7 @@ _TEST_LIST
 #undef X
 /**
  * X macro to register meta functions.
+ * @param Type Name of the section as a discriminating type for array of registered functions.
  */
 #define X(Type)                                                            \
 	for (Vtest* test = __start_##Type; test < __stop_##Type; test++)   \
@@ -229,7 +295,7 @@ _TEST_LIST
 			for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)
 			{
 				Vtest* t = nodeTest->data;
-				if (memcmp(t->name, optarg, strlen(t->name))) continue;
+				if (strcmp(t->name, optarg)) continue;
 
 				test = t;
 				break;
@@ -239,14 +305,14 @@ _TEST_LIST
 
 			if (suite->VtestTypePreTransUnit == 0)
 			{
-				fprintf(stderr, "Test %s not setup in pre-trans-unit\n", optarg);
+				fprintf(stderr, "No pre-trans-unit function to setup test %s\n", optarg);
 				return 1;
 			}
 
 			for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)
 			{
 				Vtest* t = nodeTest->data;
-				if (memcmp(t->name, optarg, strlen(t->name))) continue;
+				if (strcmp(t->name, optarg)) continue;
 
 				test = t;
 				break;
@@ -288,27 +354,36 @@ _TEST_LIST
 
 	if (suite == 0) goto skip_cli;
 	
-	s32   suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
-
 	RUN_PRE_TRANS_UNIT(suite, arena);
 
-	if (test && test->args == 0) /*! Classic test */
+	if (test == 0) goto run_suite;
+
+	if (    test->args == 0                                &&
+		(u64)test >= (u64)__start_VtestTypeTestWithArg && 
+		(u64)test <= (u64) __stop_VtestTypeTestWithArg )
+	{
+		fprintf(stderr, "No argument for test %s in suite %s\n", test->name, suite->file);
+		return 1;
+	}
+
+	if (test->args == 0) /*! Classic test */
 	{
 		s32    jump = setjmp(g_assert_ctx.jmpbuffer);
 
 		if (jump == 0)
 		{
 			RUN_TEST(test, suite, 0);
+			RUN_POST_TRANS_UNIT(suite);
 			return 0;
 		}
 		else
 		{
 			TEST_FAILED(test);
+			RUN_POST_TRANS_UNIT(suite);
 			return 1;
 		}
 	}
-	
-	if (test) /*! Test with arg. No need to check for setup since it is done when parsing options. */
+	else /*! Test with arg */
 	{
 		List* args    = test->args;
 		s32   result  = 0;
@@ -329,64 +404,15 @@ _TEST_LIST
 			}
 		}
 
+		RUN_POST_TRANS_UNIT(suite);
 		return result;
 	}
 
-	/* If the code runs here, it means that test == 0 && suite != 0 */
-
-	printf("\nRunning %d tests for suit %s\n", suiteTestsCount, suite->file);
+run_suite:;
 	
-	for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)
-	{
-		Vtest* test = nodeTest->data;
-		s32    jump = setjmp(g_assert_ctx.jmpbuffer);
+	u32   suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
 
-		if (jump == 0)
-		{
-			RUN_TEST(test, suite, 0);
-			successCount++;
-		}
-		else
-		{
-			TEST_FAILED(test);
-		}
-	}
-	
-	for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)
-	{
-		Vtest* test    = nodeTest->data;
-		List*  args    = test->args;
-		s32    argi    = 0;
-		bool   success = true;
-
-		if (args == 0)
-		{
-			printf("\nNo arguments registered for test %s. Skipping...\n", test->name);
-			continue;
-		}
-		else
-		{
-			printf("\n%d arguments found for test %s\n", args->size, test->name);
-		}
-
-		for (Node* nodeArg = args->head; nodeArg; nodeArg=nodeArg->next, argi++)
-		{
-			s32    jump = setjmp(g_assert_ctx.jmpbuffer);
-
-			if (jump == 0)
-			{
-				RUN_TEST(test, suite, nodeArg->data);
-			}
-			else
-			{
-				TEST_FAILED_ARG(test, argi);
-				success = false;
-			}
-		}
-
-		successCount += success;
-	}
-
+	RUN_SUITE(suite, suiteTestsCount, successCount);
 	RUN_POST_TRANS_UNIT(suite);
 	
 	printf("\nSuccessful tests: %u/%u\n", successCount, suiteTestsCount);
@@ -395,7 +421,7 @@ _TEST_LIST
 
 // -- CLI END --
 
-skip_cli:
+skip_cli:;
 
 	printf("--- VTEST START ---\n");
 	printf("Discovered %u tests for %lu suits\n", testsCount, suites->size);
@@ -404,63 +430,10 @@ skip_cli:
 	{
 		if (suites->ctrl[i] == SWISS_DELETED || suites->ctrl[i] == SWISS_EMPTY) continue;
 		suite                 = suites->values[i];
-		s32   suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
-
-		printf("\nRunning %d tests for suit %s\n", suiteTestsCount, suite->file);
+		u32   suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
 
 		RUN_PRE_TRANS_UNIT(suite, arena);
-	
-		for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)
-		{
-			Vtest* test = nodeTest->data;
-			s32    jump = setjmp(g_assert_ctx.jmpbuffer);
-
-			if (jump == 0)
-			{
-				RUN_TEST(test, suite, 0);
-				successCount++;
-			}
-			else
-			{
-				TEST_FAILED(test);
-			}
-		}
-		
-		for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)
-		{
-			Vtest* test    = nodeTest->data;
-			List*  args    = test->args;
-			s32    argi    = 0;
-			bool   success = true;
-
-			if (args == 0)
-			{
-				printf("\nNo arguments registered for test %s. Skipping...\n", test->name);
-				continue;
-			}
-			else
-			{
-				printf("\n%d arguments found for test %s\n", args->size, test->name);
-			}
-
-			for (Node* nodeArg = args->head; nodeArg; nodeArg=nodeArg->next, argi++)
-			{
-				s32    jump = setjmp(g_assert_ctx.jmpbuffer);
-
-				if (jump == 0)
-				{
-					RUN_TEST(test, suite, nodeArg->data);
-				}
-				else
-				{
-					TEST_FAILED_ARG(test, argi);
-					success = false;
-				}
-			}
-
-			successCount += success;
-		}
-
+		RUN_SUITE(suite, suiteTestsCount, successCount);
 		RUN_POST_TRANS_UNIT(suite);
 	}
 
