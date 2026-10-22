@@ -20,6 +20,7 @@ typedef enum OptFlags OptFlags;
 enum OptFlags
 {
 	OptVerbose = BIT0,
+	OptList    = BIT1,
 };
 
 /**
@@ -295,9 +296,10 @@ _TEST_LIST
 		{ "suite",           optional_argument, 0, 's' },
 		{ "help",            optional_argument, 0, 'h' },
 		{ "verbose",         optional_argument, 0, 'v' },
+		{ "list",            optional_argument, 0, 'l' },
 	};
 
-	while ((opt = getopt_long(argc, argv, "t:s:hv", long_opts, &option_idx)) != -1)
+	while ((opt = getopt_long(argc, argv, "t:s:hvl", long_opts, &option_idx)) != -1)
 	{
 		switch (opt)
 		{
@@ -357,6 +359,10 @@ _TEST_LIST
 		{
 			flags |= OptVerbose;
 		} break;
+		case 'l':
+		{
+			flags |= OptList;
+		} break;
 		default:
 		case 'h':
 		{
@@ -372,6 +378,41 @@ _TEST_LIST
 			return 1;
 		} break;
 		}
+	}
+
+	if (flags & OptList)
+	{
+		if (suite)
+		{
+/**
+ * Macro helper to print all tests in a suite.
+ */
+#define LIST_SUITE(suite) printf("\nFor %s suite:\n", suite->file);                                               \
+			for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)       \
+			{                                                                                         \
+				Vtest* test = nodeTest->data;                                                     \
+				printf("%s\n", test->name);                                                       \
+			}                                                                                         \
+			for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)\
+			{                                                                                         \
+				Vtest* test = nodeTest->data;                                                     \
+				printf("%s\n", test->name);                                                       \
+			}                                                                                         \
+			printf("setup-suite=%u, teardown-suite=%u\npre-test=%u, post-test=%u\n",                  \
+					(bool)suite->VtestTypeSetupSuite, (bool)suite->VtestTypeTeardownSuite,    \
+					(bool)suite->VtestTypePreTest, (bool)suite->VtestTypePostTest)
+			LIST_SUITE(suite);
+		}
+		else
+		{
+			for (u32 i = 0; i < suites->capacity; i++)
+			{
+				if (suites->ctrl[i] == SWISS_DELETED || suites->ctrl[i] == SWISS_EMPTY) continue;
+				suite = suites->values[i];
+				LIST_SUITE(suite);	
+			}
+		}
+		return 0;
 	}
 
 	if (suite == 0) goto skip_cli;

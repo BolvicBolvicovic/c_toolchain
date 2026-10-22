@@ -46,7 +46,7 @@
  *  - Consider tagging tests that want to execute the pre/post meta-functions.
  *  - Improve ASSERT feedback.
  *  - Filter option which would run all suites containing the user input. Same for tests.
- *  - Runtime controle options (i.e. `--list`, `--repeat`, etc...).
+ *  - Runtime controle options (i.e. `--repeat`, etc...).
  *  - Standard report of elapsed time. 
  *  - Wrap Vtest in the runner with a meta-Vtest which contains runtime information.
  *  - JSON output for CI.
