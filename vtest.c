@@ -6,6 +6,7 @@
 #define ARENA_IMPL
 #define SWISSMAP_IMPL
 
+#include "bits.h"
 #include "arena.h"
 #include "swissmap.h"
 #include "vtest.h"
@@ -15,6 +16,11 @@
 #define _GNU_SOURCE
 #include <getopt.h>
 
+typedef enum OptFlags OptFlags;
+enum OptFlags
+{
+	OptVerbose = BIT0,
+};
 
 /**
  * X macro list for the two test types.
@@ -62,7 +68,7 @@ _TEST_LIST
 #define X(Type) Vtest* Type;
 _META_TEST_LIST
 #undef X
-	char*     file;
+	char* file;
 };
 
 
@@ -115,11 +121,13 @@ SWISSMAP_DEFINE_FUNCTIONS_DEFAULT(SuiteHM, Suite*);
 /**
  * Helper to run a suite. Do not use outside of main.
  * @param suite           Suite*
- * @param suiteTestsCount u32    Count of both tests and tests with args.
- * @param successCount    u32    Count of total successful tests.
+ * @param suiteTestsCount u32      Count of both tests and tests with args.
+ * @param successCount    u32      Count of total successful tests.
+ * @param flags           OptFlags Flags containing verbose.
  */
-#define RUN_SUITE(suite, suiteTestsCount, successCount) do {                                       \
-	printf("\nRunning %d tests for suite %s\n", suiteTestsCount, suite->file);                 \
+#define RUN_SUITE(suite, suiteTestsCount, successCount, flags) do {                                \
+	if (flags & OptVerbose)                                                                    \
+		printf("\nRunning %d tests for suite %s\n", suiteTestsCount, suite->file);         \
 	for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)        \
 	{                                                                                          \
 		Vtest* test = nodeTest->data;                                                      \
@@ -142,10 +150,12 @@ SWISSMAP_DEFINE_FUNCTIONS_DEFAULT(SuiteHM, Suite*);
 		bool   success = true;                                                             \
 		if (args == 0)                                                                     \
 		{                                                                                  \
-			printf("\nNo arguments registered for test %s. Skipping...\n", test->name);\
+			if (flags & OptVerbose)                                                    \
+				printf("\nNo arguments registered for test %s. Skipping...\n",     \
+					test->name);                                               \
 			continue;                                                                  \
 		}                                                                                  \
-		else                                                                               \
+		else if (flags & OptVerbose)                                                       \
 		{                                                                                  \
 			printf("\n%d arguments found for test %s\n", args->size, test->name);      \
 		}                                                                                  \
@@ -213,6 +223,7 @@ _TEST_LIST
 	const u32 testsCount   = countVtestTypeTest + countVtestTypeTestWithArg - 2; // -2 for guards
 	char*     suiteFile    = 0;
 	Suite*    suite        = 0;
+	OptFlags  flags        = 0;
 
 // -- TEST DISCOVERY START --
 
@@ -255,14 +266,15 @@ _TEST_LIST
  * X macro to register meta functions.
  * @param Type Name of the section as a discriminating type for array of registered functions.
  */
-#define X(Type)                                                            \
-	for (Vtest* test = __start_##Type; test < __stop_##Type; test++)   \
-	{                                                                  \
-		NewSuite(Type);                                            \
-		if (suite->Type)                                           \
-			printf("%s redefined in %s\n", #Type, suite->file);\
-		suite->Type = test;                                        \
-	}                                                                  \
+#define X(Type)                                                          \
+	for (Vtest* test = __start_##Type; test < __stop_##Type; test++) \
+	{                                                                \
+		NewSuite(Type);                                          \
+		if (suite->Type)                                         \
+			printf("%s redefined in %s, continuing...\n",    \
+				#Type, suite->file);                     \
+		suite->Type = test;                                      \
+	}                                                                \
 	suiteFile = 0, suite = 0;
 	_META_TEST_LIST
 #undef NewSuite
@@ -279,12 +291,13 @@ _TEST_LIST
 	Vtest*        test        = 0;
 	struct option long_opts[] =
 	{
-		{ "test",            optional_argument, 0, 't'  },
-		{ "suite",           optional_argument, 0, 's'  },
-		{ "help",            optional_argument, 0, 'h'  }
+		{ "test",            optional_argument, 0, 't' },
+		{ "suite",           optional_argument, 0, 's' },
+		{ "help",            optional_argument, 0, 'h' },
+		{ "verbose",         optional_argument, 0, 'v' },
 	};
 
-	while ((opt = getopt_long(argc, argv, "t:s:h", long_opts, &option_idx)) != -1)
+	while ((opt = getopt_long(argc, argv, "t:s:hv", long_opts, &option_idx)) != -1)
 	{
 		switch (opt)
 		{
@@ -340,6 +353,10 @@ _TEST_LIST
 
 			suite = *suite_ptr;
 		} break;
+		case 'v':
+		{
+			flags |= OptVerbose;
+		} break;
 		default:
 		case 'h':
 		{
@@ -350,6 +367,7 @@ _TEST_LIST
 				"  -t, --test  [NAME] : Run [NAME] test.\n"
 				"                       Need the '--suite' option to be first.\n"
 				"                       Tests with argument need to register it in the pre-trans-unit.\n"
+				"  -v, --verbose      : Print tests and suites logs."
 				"  -h, --help         : Print this message.\n", argv[0]);
 			return 1;
 		} break;
@@ -416,10 +434,11 @@ run_suite:;
 	
 	u32   suiteTestsCount = suite->VtestTypeTest.size + suite->VtestTypeTestWithArg.size;
 
-	RUN_SUITE(suite, suiteTestsCount, successCount);
+	RUN_SUITE(suite, suiteTestsCount, successCount, flags);
 	RUN_TEARDOWN_SUITE(suite);
 	
-	printf("\nSuccessful tests: %u/%u\n", successCount, suiteTestsCount);
+	if (flags & OptVerbose)
+		printf("\nSuccessful tests: %u/%u\n", successCount, suiteTestsCount);
 	
 	return 0;
 
@@ -427,8 +446,11 @@ run_suite:;
 
 skip_cli:;
 
-	printf("--- VTEST START ---\n");
-	printf("Discovered %u tests for %lu suits\n", testsCount, suites->size);
+	if (flags & OptVerbose)
+	{
+		printf("--- VTEST START ---\n");
+		printf("Discovered %u tests for %lu suits\n", testsCount, suites->size);
+	}
 
 	for (u32 i = 0; i < suites->capacity; i++)
 	{
@@ -438,14 +460,17 @@ skip_cli:;
 		arena_temp_t tmp             = arena_temp_begin(arena);
 
 		RUN_SETUP_SUITE(suite, arena);
-		RUN_SUITE(suite, suiteTestsCount, successCount);
+		RUN_SUITE(suite, suiteTestsCount, successCount, flags);
 		RUN_TEARDOWN_SUITE(suite);
 
 		arena_temp_end(tmp);
 	}
 
-	printf("\nSuccessful tests: %u/%u\n", successCount, testsCount);
-	printf("--- VTEST DONE ---\n");
+	if (flags & OptVerbose)
+	{
+		printf("\nSuccessful tests: %u/%u\n", successCount, testsCount);
+		printf("--- VTEST DONE ---\n");
+	}
 
 	return 0;
 }
