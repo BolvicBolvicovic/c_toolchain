@@ -65,37 +65,16 @@
 
 #include "c_types.h"
 #include "arena.h"
-#include <setjmp.h>
+#include "vlist.h"  // IWYU pragma: keep
 #include <stdio.h>  // IWYU pragma: keep
 #include <string.h> // IWYU pragma: keep
+#include <setjmp.h>
 #include <immintrin.h>
-
-typedef struct Node Node;
-typedef struct List List;
 
 typedef enum   VtestType   VtestType;
 typedef struct Vtest       Vtest;
 typedef struct AssertCtx   AssertCtx;
 typedef void (*VtestFn)(void*);
-
-/** struct Node!
- *  Node for a linked list.
- */
-struct Node
-{
-	void* data;
-	Node* next;
-};
-
-/** struct List!
- *  Linked list.
- */
-struct List
-{
-	Node* head;
-	Node* tail;
-	u32   size;
-};
 
 /** struct Vtest!
  *  Contains the meta-data of each registered function
@@ -180,21 +159,15 @@ extern AssertCtx g_assert_ctx;
 	do                                                              \
 	{                                                               \
 		arena_t* ar   = _ss_arena;                              \
-		Node*    node = ARENA_PUSH_STRUCT(ar, Node);            \
-		node->data = ptr;                                       \
-		List* list = _vtest_##test.args;                        \
+		VNode*   node = ARENA_PUSH_STRUCT(ar, VNode);           \
+		node->data    = ptr;                                    \
+		VList* list   = _vtest_##test.args;                     \
 		if (list == 0)                                          \
 		{                                                       \
-			list = ARENA_PUSH_STRUCT(ar, List);             \
-			list->head = node;                              \
+			list = ARENA_PUSH_STRUCT(ar, VList);            \
 			_vtest_##test.args = list;                      \
 		}                                                       \
-		else                                                    \
-		{                                                       \
-			list->tail->next = node;                        \
-		}                                                       \
-		list->tail = node;                                      \
-		list->size++;                                           \
+		VList_push_back(list, node);                            \
 	} while (0)
 
 /** Test input!
@@ -206,24 +179,18 @@ extern AssertCtx g_assert_ctx;
 #define TEST_INPUT(test, arg_type, ...)                                 \
 	do                                                              \
 	{                                                               \
-		arena_t* ar   = _ptu_arena;                             \
+		arena_t* ar   = _ss_arena;                              \
 		void*    ag   = ARENA_PUSH_STRUCT(ar, arg_type);        \
-		Node*    node = ARENA_PUSH_STRUCT(ar, Node);            \
+		VNode*   node = ARENA_PUSH_STRUCT(ar, VNode);           \
 		memmove(ag, &(arg_type){__VA_ARGS__}, sizeof(arg_type));\
-		node->data = ag;                                        \
-		List* list = _vtest_##test.args;                        \
+		node->data  = ag;                                       \
+		VList* list = _vtest_##test.args;                       \
 		if (list == 0)                                          \
 		{                                                       \
-			list = ARENA_PUSH_STRUCT(ar, List);             \
-			list->head = node;                              \
+			list = ARENA_PUSH_STRUCT(ar, VList);            \
 			_vtest_##test.args = list;                      \
 		}                                                       \
-		else                                                    \
-		{                                                       \
-			list->tail->next = node;                        \
-		}                                                       \
-		list->tail = node;                                      \
-		list->size++;                                           \
+		VList_push_back(list, node);                            \
 	} while (0)
 
 #ifdef ASSERT
@@ -242,6 +209,9 @@ extern AssertCtx g_assert_ctx;
 	} while (0)
 #endif
 
+/*! More specific name for should be equal assertions */
+#define ASSERT_EQ(eq) ASSERT(eq)
+
 /*! More specific name for should successed assertions */
 #define ASSERT_SUCCESS(eq) ASSERT(eq)
 
@@ -254,9 +224,9 @@ extern AssertCtx g_assert_ctx;
 	u32 name##_shadow;      \
 	name##_start = __rdtscp(&(name##_shadow))
 /*! Assertion routine for running a test in a maximum amount of cycles end */
-#define ASSERT_CLOCK_END(name, max_cycles)           \
-	u64 name##_end;                              \
+#define ASSERT_CLOCK_END(name, max_cycles)      \
+	u64 name##_end;                         \
 	name##_end = __rdtscp(&(name##_shadow));\
-	__asm__ volatile("":::"memory");             \
+	__asm__ volatile("":::"memory");        \
 	ASSERT((name##_end - name##_start) < max_cycles)
 #endif

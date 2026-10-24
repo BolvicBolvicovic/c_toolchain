@@ -2,7 +2,6 @@
 #include "vtest.h"
 #define ZSTRING_IMPL
 #include "zstring.h"
-#include <assert.h>
 
 TEST_WITH_ARG(Slice, _ss_arena)
 {
@@ -22,7 +21,7 @@ TEST_WITH_ARG(Cat, _ss_arena)
 	zstring* z2 = &zstring_on_stack("and sun.", 8);
 	zstring* z3 = zstring_cat(arena, z1, z2);
 
-	assert(zstring_cmp(&zstring_on_stack("Sea, sex and sun.", 17), z3));
+	ASSERT_SUCCESS(zstring_cmp(&zstring_on_stack("Sea, sex and sun.", 17), z3));
 }
 
 TEST_WITH_ARG(SplitJoin, _ss_arena)
@@ -35,10 +34,10 @@ TEST_WITH_ARG(SplitJoin, _ss_arena)
 	zstring* sstr  = zstring_split(arena, zstr, &zstring_on_stack(", sex ", 6), &count);
 	zstring* jstr  = zstring_join(arena, sstr, count, &zstring_on_stack(", sex ", 6));
 
-	assert(count == 2);
-	assert(strcmp("Sea", zstring_as_cstring(arena, sstr)) == 0);
-	assert(strcmp("and sun.", zstring_as_cstring(arena, sstr + 1)) == 0);
-	assert(zstring_cmp(zstr, jstr));
+	ASSERT_SUCCESS(count == 2);
+	ASSERT_SUCCESS(strcmp("Sea", zstring_as_cstring(arena, sstr)) == 0);
+	ASSERT_SUCCESS(strcmp("and sun.", zstring_as_cstring(arena, sstr + 1)) == 0);
+	ASSERT_SUCCESS(zstring_cmp(zstr, jstr));
 }
 
 TEST_WITH_ARG(Trim, _ss_arena)
@@ -50,9 +49,9 @@ TEST_WITH_ARG(Trim, _ss_arena)
 	zstring  rstr  = zstring_trim_end(&lstr, "sun.");
 	zstring  sstr  = zstring_trim(&rstr, " and");
 	
-	assert(strcmp(" sex and sun.", zstring_as_cstring(arena, &lstr)) == 0);
-	assert(strcmp(" sex and ", zstring_as_cstring(arena, &rstr)) == 0);
-	assert(strcmp("sex", zstring_as_cstring(arena, &sstr)) == 0);
+	ASSERT_SUCCESS(strcmp(" sex and sun.", zstring_as_cstring(arena, &lstr)) == 0);
+	ASSERT_SUCCESS(strcmp(" sex and ", zstring_as_cstring(arena, &rstr)) == 0);
+	ASSERT_SUCCESS(strcmp("sex", zstring_as_cstring(arena, &sstr)) == 0);
 }
 
 SETUP_SUITE()

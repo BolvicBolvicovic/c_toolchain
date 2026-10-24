@@ -1,6 +1,6 @@
 BIN=tester
 CC=gcc
-CFLAGS=-Werror -Wextra -Wall -Wno-unused-function
+CFLAGS=-g -Werror -Wextra -Wall -Wno-unused-function
 INC=-I.
 
 SRCS=$(wildcard tests/*.c) vtest.c

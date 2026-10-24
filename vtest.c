@@ -5,10 +5,12 @@
 
 #define ARENA_IMPL
 #define SWISSMAP_IMPL
+#define VLIST_IMPL
 
 #include "bits.h"
 #include "arena.h"
 #include "swissmap.h"
+#include "vlist.h"
 #include "vtest.h"
 #include "c_types.h"
 #include <stdio.h>
@@ -63,7 +65,7 @@ _SECTION_LIST
 typedef struct Suite Suite;
 struct Suite
 {
-#define X(Type) List Type;
+#define X(Type) VList Type;
 _TEST_LIST
 #undef X
 #define X(Type) Vtest* Type;
@@ -129,7 +131,7 @@ SWISSMAP_DEFINE_FUNCTIONS_DEFAULT(SuiteHM, Suite*);
 #define RUN_SUITE(suite, suiteTestsCount, successCount, flags) do {                                \
 	if (flags & OptVerbose)                                                                    \
 		printf("\nRunning %d tests for suite %s\n", suiteTestsCount, suite->file);         \
-	for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)        \
+	for (VNode* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)       \
 	{                                                                                          \
 		Vtest* test = nodeTest->data;                                                      \
 		s32    jump = setjmp(g_assert_ctx.jmpbuffer);                                      \
@@ -143,24 +145,22 @@ SWISSMAP_DEFINE_FUNCTIONS_DEFAULT(SuiteHM, Suite*);
 			TEST_FAILED(test);                                                         \
 		}                                                                                  \
 	}                                                                                          \
-	for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next) \
+	for (VNode* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)\
 	{                                                                                          \
 		Vtest* test    = nodeTest->data;                                                   \
-		List*  args    = test->args;                                                       \
+		VList*  args    = test->args;                                                      \
 		s32    argi    = 0;                                                                \
 		bool   success = true;                                                             \
 		if (args == 0)                                                                     \
 		{                                                                                  \
-			if (flags & OptVerbose)                                                    \
-				printf("\nNo arguments registered for test %s. Skipping...\n",     \
-					test->name);                                               \
+			printf("\nNo arguments registered for test %s. Skipping...\n", test->name);\
 			continue;                                                                  \
 		}                                                                                  \
 		else if (flags & OptVerbose)                                                       \
 		{                                                                                  \
 			printf("\n%d arguments found for test %s\n", args->size, test->name);      \
 		}                                                                                  \
-		for (Node* nodeArg = args->head; nodeArg; nodeArg=nodeArg->next, argi++)           \
+		for (VNode* nodeArg = args->head; nodeArg; nodeArg=nodeArg->next, argi++)          \
 		{                                                                                  \
 			s32    jump = setjmp(g_assert_ctx.jmpbuffer);                              \
 			if (jump == 0)                                                             \
@@ -251,14 +251,9 @@ _TEST_LIST
 	for (Vtest* test = __start_##Type; test < __stop_##Type; test++)\
 	{                                                               \
 		NewSuite(Type);                                         \
-		Node* node       = ARENA_PUSH_STRUCT(arena, Node);      \
-		node->data       = test;                                \
-		if (suite->Type.size == 0)                              \
-			suite->Type.head = node;                        \
-		else                                                    \
-			suite->Type.tail->next = node;                  \
-		suite->Type.tail = node;                                \
-		suite->Type.size++;                                     \
+		VNode* node = ARENA_PUSH_STRUCT(arena, VNode);          \
+		node->data  = test;                                     \
+		VList_push_back(&suite->Type, node);                    \
 	}                                                               \
 	suiteFile = 0, suite = 0;
 	_TEST_LIST
@@ -311,7 +306,7 @@ _TEST_LIST
 				return 1;
 			}
 
-			for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)
+			for (VNode* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)
 			{
 				Vtest* t = nodeTest->data;
 				if (strcmp(t->name, optarg)) continue;
@@ -328,7 +323,7 @@ _TEST_LIST
 				return 1;
 			}
 
-			for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)
+			for (VNode* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)
 			{
 				Vtest* t = nodeTest->data;
 				if (strcmp(t->name, optarg)) continue;
@@ -387,19 +382,19 @@ _TEST_LIST
 /**
  * Macro helper to print all tests in a suite.
  */
-#define LIST_SUITE(suite) printf("\nFor %s suite:\n", suite->file);                                               \
-			for (Node* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)       \
-			{                                                                                         \
-				Vtest* test = nodeTest->data;                                                     \
-				printf("%s\n", test->name);                                                       \
-			}                                                                                         \
-			for (Node* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)\
-			{                                                                                         \
-				Vtest* test = nodeTest->data;                                                     \
-				printf("%s\n", test->name);                                                       \
-			}                                                                                         \
-			printf("setup-suite=%u, teardown-suite=%u\npre-test=%u, post-test=%u\n",                  \
-					(bool)suite->VtestTypeSetupSuite, (bool)suite->VtestTypeTeardownSuite,    \
+#define LIST_SUITE(suite) printf("\nFor %s suite:\n", suite->file);                                                \
+			for (VNode* nodeTest = suite->VtestTypeTest.head; nodeTest; nodeTest=nodeTest->next)       \
+			{                                                                                          \
+				Vtest* test = nodeTest->data;                                                      \
+				printf("%s\n", test->name);                                                        \
+			}                                                                                          \
+			for (VNode* nodeTest = suite->VtestTypeTestWithArg.head; nodeTest; nodeTest=nodeTest->next)\
+			{                                                                                          \
+				Vtest* test = nodeTest->data;                                                      \
+				printf("%s\n", test->name);                                                        \
+			}                                                                                          \
+			printf("setup-suite=%u, teardown-suite=%u\npre-test=%u, post-test=%u\n",                   \
+					(bool)suite->VtestTypeSetupSuite, (bool)suite->VtestTypeTeardownSuite,     \
 					(bool)suite->VtestTypePreTest, (bool)suite->VtestTypePostTest)
 			LIST_SUITE(suite);
 		}
@@ -448,11 +443,11 @@ _TEST_LIST
 	}
 	else /*! Test with arg */
 	{
-		List* args    = test->args;
-		s32   result  = 0;
-		s32   argi    = 0;
+		VList* args  = test->args;
+		s32   result = 0;
+		s32   argi   = 0;
 
-		for (Node* nodeArg = args->head; nodeArg; nodeArg=nodeArg->next, argi++)
+		for (VNode* nodeArg = args->head; nodeArg; nodeArg=nodeArg->next, argi++)
 		{
 			s32    jump = setjmp(g_assert_ctx.jmpbuffer);
 

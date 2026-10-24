@@ -12,8 +12,8 @@
 typedef struct zstring zstring;
 struct zstring
 {
-	u64	size;	// There is no need for a zstring_len() function. Just access the struct member.
 	char*	data;
+	u64	size;	// There is no need for a zstring_len() function. Just access the struct member.
 };
 
 // --- Initialization ---
@@ -34,6 +34,7 @@ struct zstring
 zstring*	zstring_on_heap(arena_t* arena, char* data, u64 size);
 zstring		zstring_slice_on_stack(zstring* z, u64 start, u64 end);
 zstring*	zstring_slice_on_heap(arena_t* arena, zstring* z, u64 start, u64 end);
+// Returns a copy of a zstring as a cstring.
 char*		zstring_as_cstring(arena_t* arena, zstring* z);
 
 // --- Updates ---

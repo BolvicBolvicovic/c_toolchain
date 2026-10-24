@@ -107,7 +107,7 @@ void		arena_temp_end(arena_temp_t);
  */
 #ifdef ARENA_IMPL
 
-#include "linked_list.h"
+#include "vlist.h"
 #include "macros.h"
 #include <sys/mman.h>
 #include <string.h>
@@ -205,7 +205,8 @@ arena_push(arena_t* arena, u32 size, u32 align, u8 zero)
 				.allocation_site_line	= current->allocation_site_line);
 
 		new_block->base_position = current->base_position + current->reserve;
-		SLL_STACK_PUSH_N(arena->current, new_block, prev);
+		new_block->prev = arena->current;
+		arena->current = new_block;
 
 		current = new_block;
 		pos_pre = ALIGN(current->position, align);
